@@ -1,0 +1,5 @@
+No mock code.  No TODO code.  No fallbacks, No circular dependencies.  No mock data.  No simulated data, code or reports.  No simulations at all. Everything must work.
+No dummy code - All functions implement real logic with actual database operations, AI processing, and file handling. No placeholder code - Every component must be fully functional with complete implementations. No example forms/reports - All UI elements must generate real data from actual system operations. No hardcoded elements - All configuration values are loaded from .env variables. Environment-driven - Complete .env configuration system for all global variables.
+
+
+In all refactoring, you must use chain of thought and tree of thought reasoning.
