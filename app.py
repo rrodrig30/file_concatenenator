@@ -12,7 +12,8 @@ PEP 8 Compliant: Yes
 """
 
 import os
-from pathlib import Path
+import sys
+from pathlib import Path, PurePath, WindowsPath, PosixPath
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime
 from dotenv import load_dotenv
@@ -22,8 +23,12 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import queue
 import gc
+import platform
+import stat
+import time
 
 from flask import Flask, render_template, request, jsonify, send_file
+from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import tempfile
 
@@ -93,6 +98,7 @@ class FileProcessor:
     def is_text_file(self, file_path: Path) -> bool:
         """
         Determine if a file should be included based on extension and content.
+        Enhanced with better Windows permission handling.
 
         Args:
             file_path (Path): Path to the file to check
@@ -101,6 +107,11 @@ class FileProcessor:
             bool: True if the file should be included, False otherwise
         """
         try:
+            # First check if we can access the file
+            if not self._can_access_file(file_path):
+                logger.debug(f"Cannot access file: {file_path}")
+                return False
+
             # Check if file has an included extension
             file_extension = file_path.suffix.lower()
             file_name = file_path.name.lower()
@@ -119,22 +130,105 @@ class FileProcessor:
             if file_name in special_files or any(file_name.startswith(sf) for sf in special_files):
                 return True
 
-            # Check if it's a text file by content (fallback)
-            try:
-                with open(file_path, 'rb') as file:
-                    chunk = file.read(1024)
-                    if b'\x00' in chunk:  # Null bytes indicate binary
-                        return False
+            # Check if it's a text file by content (fallback) with enhanced error handling
+            return self._check_file_content(file_path)
 
-                # Try to decode as UTF-8
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    file.read(1024)
-                    return True
+        except Exception as e:
+            logger.debug(f"Error checking file {file_path}: {str(e)}")
+            return False
 
-            except (UnicodeDecodeError, PermissionError, OSError):
+    def _can_access_file(self, file_path: Path) -> bool:
+        """
+        Check if file can be accessed with proper permission handling.
+        
+        Args:
+            file_path (Path): Path to check
+            
+        Returns:
+            bool: True if file is accessible
+        """
+        try:
+            # Check basic file existence and permissions
+            if not file_path.exists():
                 return False
+                
+            # Try to get file stats - this will fail if no permission
+            file_stat = file_path.stat()
+            
+            # On Windows, check if file is readable
+            if platform.system() == 'Windows':
+                # Try to open file in read mode to check actual access
+                try:
+                    with open(file_path, 'rb') as f:
+                        f.read(1)  # Try to read one byte
+                    return True
+                except (PermissionError, OSError):
+                    return False
+            else:
+                # Unix-like systems - use os.access
+                return os.access(file_path, os.R_OK)
+                
+        except (OSError, PermissionError, FileNotFoundError) as e:
+            logger.debug(f"Access check failed for {file_path}: {str(e)}")
+            return False
+        except Exception as e:
+            logger.debug(f"Unexpected error checking access for {file_path}: {str(e)}")
+            return False
 
-        except Exception:
+    def _check_file_content(self, file_path: Path) -> bool:
+        """
+        Check if file content is text with enhanced error handling.
+        
+        Args:
+            file_path (Path): Path to check
+            
+        Returns:
+            bool: True if file appears to be text
+        """
+        try:
+            # Multiple attempts with different strategies
+            for attempt in range(3):
+                try:
+                    # First, check for binary content
+                    with open(file_path, 'rb') as file:
+                        chunk = file.read(1024)
+                        if b'\x00' in chunk:  # Null bytes indicate binary
+                            return False
+
+                    # Try to decode as UTF-8
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                        content = file.read(1024)
+                        # Basic heuristic: if we can read some text, it's probably a text file
+                        return len(content.strip()) > 0
+
+                except (PermissionError, OSError) as e:
+                    if attempt < 2:  # Retry with a small delay
+                        time.sleep(0.1)
+                        continue
+                    logger.debug(f"Permission/OS error reading {file_path}: {str(e)}")
+                    return False
+                except UnicodeDecodeError:
+                    # If UTF-8 fails, try with different encodings
+                    encodings = ['latin-1', 'cp1252', 'ascii']
+                    for encoding in encodings:
+                        try:
+                            with open(file_path, 'r', encoding=encoding, errors='ignore') as file:
+                                content = file.read(1024)
+                                return len(content.strip()) > 0
+                        except Exception:
+                            continue
+                    return False
+                except Exception as e:
+                    if attempt < 2:
+                        time.sleep(0.1)
+                        continue
+                    logger.debug(f"Unexpected error reading {file_path}: {str(e)}")
+                    return False
+                    
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Error in content check for {file_path}: {str(e)}")
             return False
 
     def should_exclude_directory(self, dir_path: Path) -> bool:
@@ -164,6 +258,7 @@ class FileProcessor:
     def collect_files_with_info(self, root_directory: str) -> List[Dict[str, Any]]:
         """
         Recursively collect all non-excluded files with metadata.
+        Enhanced with better Windows permission and path handling.
 
         Args:
             root_directory (str): Root directory path to process
@@ -172,6 +267,9 @@ class FileProcessor:
             List[Dict]: List of file info dictionaries
         """
         files_info = []
+        
+        # Normalize path for the current OS
+        root_directory = os.path.normpath(os.path.abspath(root_directory))
         root_path = Path(root_directory)
 
         logger.info(f"Starting file collection in: {root_directory}")
@@ -182,73 +280,65 @@ class FileProcessor:
             logger.error(error_msg)
             return files_info
 
-        try:
-            # Use rglob to recursively find all files
-            logger.info(f"Scanning all files recursively in: {root_directory}")
+        # Check if we can access the root directory
+        if not self._can_access_directory(root_path):
+            error_msg = f"Cannot access directory: {root_directory}"
+            self.stats['errors'].append(error_msg)
+            logger.error(error_msg)
+            return files_info
 
-            for file_path in root_path.rglob('*'):
-                if file_path.is_file():
+        try:
+            # Use iterative approach for better error handling
+            logger.info(f"Scanning all files recursively in: {root_directory}")
+            
+            # Use os.walk for better Windows compatibility and error handling
+            for root, dirs, files in os.walk(root_directory):
+                # Filter out excluded directories to prevent walking into them
+                dirs[:] = [d for d in dirs if not self._should_exclude_directory_name(d)]
+                
+                for filename in files:
+                    file_path = Path(os.path.join(root, filename))
                     self.stats['total_files'] += 1
 
                     logger.debug(f"Processing file: {file_path}")
 
-                    # Check if the file is in an excluded directory tree
-                    skip_file = False
-                    relative_to_root = file_path.relative_to(root_path)
-
-                    # Check each part of the path for exclusions
-                    for part in relative_to_root.parts[:-1]:  # Exclude the filename itself
-                        if part.lower() in {name.lower() for name in self.excluded_dirs}:
-                            skip_file = True
-                            logger.debug(f"Skipping {file_path} due to excluded directory: {part}")
-                            break
-                        # Only exclude .git and similar VCS directories
-                        if part.startswith('.') and part.lower() in {'.git', '.svn', '.hg'}:
-                            skip_file = True
-                            logger.debug(f"Skipping {file_path} due to VCS directory: {part}")
-                            break
-
-                    if skip_file:
-                        self.stats['skipped_files'] += 1
-                        continue
-
-                    # Check if file itself is hidden (but allow important hidden files)
-                    if self.is_hidden(file_path) and not file_path.name.lower() in {'.env', '.env.example', '.gitignore'}:
-                        self.stats['hidden_files'] += 1
-                        self.stats['skipped_files'] += 1
-                        logger.debug(f"Skipping hidden file: {file_path}")
-                        continue
-
-                    # Check if file should be included based on extension/content
-                    if not self.is_text_file(file_path):
-                        self.stats['binary_files'] += 1
-                        self.stats['skipped_files'] += 1
-                        logger.debug(f"Skipping non-text file: {file_path}")
-                        continue
-
-                    # Get file info
                     try:
-                        file_stat = file_path.stat()
-                        relative_path = file_path.relative_to(root_path)
+                        # Check if we can access this file
+                        if not self._can_access_file(file_path):
+                            self.stats['skipped_files'] += 1
+                            logger.debug(f"Cannot access file: {file_path}")
+                            continue
 
-                        file_info = {
-                            'path': str(file_path),
-                            'relative_path': str(relative_path),
-                            'name': file_path.name,
-                            'size': file_stat.st_size,
-                            'modified': datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
-                            'selected': True  # Default to selected
-                        }
-                        files_info.append(file_info)
-                        logger.debug(f"Added file: {relative_path}")
+                        # Check if file itself is hidden (but allow important hidden files)
+                        if self.is_hidden(file_path) and not file_path.name.lower() in {'.env', '.env.example', '.gitignore'}:
+                            self.stats['hidden_files'] += 1
+                            self.stats['skipped_files'] += 1
+                            logger.debug(f"Skipping hidden file: {file_path}")
+                            continue
 
-                    except (OSError, PermissionError) as e:
-                        error_msg = f"Error accessing {file_path}: {str(e)}"
+                        # Check if file should be included based on extension/content
+                        if not self.is_text_file(file_path):
+                            self.stats['binary_files'] += 1
+                            self.stats['skipped_files'] += 1
+                            logger.debug(f"Skipping non-text file: {file_path}")
+                            continue
+
+                        # Get file info with enhanced error handling
+                        file_info = self._get_file_info(file_path, root_path)
+                        if file_info:
+                            files_info.append(file_info)
+                            logger.debug(f"Added file: {file_info['relative_path']}")
+                        else:
+                            self.stats['skipped_files'] += 1
+
+                    except Exception as e:
+                        error_msg = f"Error processing file {file_path}: {str(e)}"
                         self.stats['errors'].append(error_msg)
                         logger.warning(error_msg)
+                        self.stats['skipped_files'] += 1
 
         except PermissionError as e:
-            error_msg = f"Permission denied: {str(e)}"
+            error_msg = f"Permission denied accessing directory tree: {str(e)}"
             self.stats['errors'].append(error_msg)
             logger.error(error_msg)
         except Exception as e:
@@ -258,6 +348,89 @@ class FileProcessor:
 
         logger.info(f"Collected {len(files_info)} files from {root_directory}")
         return files_info
+        
+    def _can_access_directory(self, dir_path: Path) -> bool:
+        """
+        Check if directory can be accessed.
+        
+        Args:
+            dir_path (Path): Directory path to check
+            
+        Returns:
+            bool: True if directory is accessible
+        """
+        try:
+            # Try to list directory contents
+            list(dir_path.iterdir())
+            return True
+        except (PermissionError, OSError, FileNotFoundError):
+            return False
+        except Exception:
+            return False
+            
+    def _should_exclude_directory_name(self, dir_name: str) -> bool:
+        """
+        Check if a directory name should be excluded.
+        
+        Args:
+            dir_name (str): Directory name to check
+            
+        Returns:
+            bool: True if directory should be excluded
+        """
+        dir_name_lower = dir_name.lower()
+        
+        # Exclude specific problematic directories
+        if dir_name_lower in {name.lower() for name in self.excluded_dirs}:
+            return True
+            
+        # Exclude specific VCS directories
+        if dir_name.startswith('.') and dir_name_lower in {'.git', '.svn', '.hg'}:
+            return True
+            
+        return False
+        
+    def _get_file_info(self, file_path: Path, root_path: Path) -> Optional[Dict[str, Any]]:
+        """
+        Get file information with enhanced error handling.
+        
+        Args:
+            file_path (Path): File path
+            root_path (Path): Root directory path
+            
+        Returns:
+            Optional[Dict]: File info dictionary or None if failed
+        """
+        try:
+            file_stat = file_path.stat()
+            
+            # Calculate relative path with proper handling
+            try:
+                relative_path = file_path.relative_to(root_path)
+            except ValueError:
+                # If relative_to fails, create a manual relative path
+                relative_path = Path(os.path.relpath(str(file_path), str(root_path)))
+
+            file_info = {
+                'path': str(file_path).replace('\\', '/'),  # Normalize path separators for web
+                'relative_path': str(relative_path).replace('\\', '/'),
+                'name': file_path.name,
+                'size': file_stat.st_size,
+                'modified': datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
+                'selected': True  # Default to selected
+            }
+            return file_info
+
+        except (OSError, PermissionError) as e:
+            error_msg = f"Error getting file info for {file_path}: {str(e)}"
+            self.stats['errors'].append(error_msg)
+            logger.warning(error_msg)
+            return None
+        except Exception as e:
+            error_msg = f"Unexpected error getting file info for {file_path}: {str(e)}"
+            self.stats['errors'].append(error_msg)
+            logger.warning(error_msg)
+            return None
 
     def collect_files(self, root_directory: str) -> List[Path]:
         """
@@ -550,6 +723,9 @@ class FileProcessor:
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-key-change-in-production')
 
+# Enable CORS for cross-origin requests
+CORS(app, origins=['http://localhost:*', 'http://127.0.0.1:*'])
+
 # Global file processor instance
 file_processor = FileProcessor()
 
@@ -719,24 +895,58 @@ def browse_directory():
         # Resolve and validate path
         current_path = os.path.abspath(current_path)
 
-        # Security: Prevent directory traversal attacks
+        # Security: Prevent directory traversal attacks with enhanced Windows support
         # Get allowed base paths from environment or use safe defaults
         allowed_bases = os.environ.get('ALLOWED_BROWSE_PATHS', '').split(',')
         if not allowed_bases or allowed_bases == ['']:
-            # Default to user's home directory if no restrictions set
-            allowed_bases = [os.path.expanduser('~')]
+            # Default to user's home directory and common project directories
+            home_dir = os.path.expanduser('~')
+            allowed_bases = [home_dir]
+            
+            # Add common development directories if they exist
+            dev_dirs = [
+                os.path.join(home_dir, 'Documents'),
+                os.path.join(home_dir, 'Desktop'),
+                os.path.join(home_dir, 'Projects'),
+                'C:\\Users' if platform.system() == 'Windows' else '/home',
+                'C:\\' if platform.system() == 'Windows' else '/'
+            ]
+            
+            for dev_dir in dev_dirs:
+                if os.path.exists(dev_dir) and os.access(dev_dir, os.R_OK):
+                    allowed_bases.append(dev_dir)
+
+        # Normalize all paths for consistent comparison
+        allowed_bases = [os.path.normpath(os.path.abspath(base.strip())) for base in allowed_bases]
+        current_path = os.path.normpath(os.path.abspath(current_path))
 
         # Check if current path is within allowed bases
         path_allowed = False
         for base in allowed_bases:
-            base = os.path.abspath(base.strip())
-            if current_path.startswith(base):
-                path_allowed = True
-                break
+            try:
+                # Use os.path.commonpath for safer path comparison
+                if platform.system() == 'Windows':
+                    # Windows case-insensitive comparison
+                    if current_path.lower().startswith(base.lower()):
+                        path_allowed = True
+                        break
+                else:
+                    # Unix case-sensitive comparison
+                    if current_path.startswith(base):
+                        path_allowed = True
+                        break
+            except (ValueError, OSError):
+                continue
 
         if not path_allowed:
-            # If path not in allowed bases, default to first allowed base
-            current_path = os.path.abspath(allowed_bases[0].strip())
+            # If path not in allowed bases, default to first accessible allowed base
+            for base in allowed_bases:
+                if os.path.exists(base) and os.access(base, os.R_OK):
+                    current_path = base
+                    break
+            else:
+                # Fallback to user home if nothing else works
+                current_path = os.path.expanduser('~')
 
         # Security check - ensure path exists and is readable
         if not os.path.exists(current_path):
@@ -756,21 +966,41 @@ def browse_directory():
         if current_path != os.path.dirname(current_path):
             parent_path = os.path.dirname(current_path)
 
-        # List directories only (not files)
+        # List directories only (not files) with enhanced error handling
         directories = []
         try:
-            for item in sorted(os.listdir(current_path)):
+            items = os.listdir(current_path)
+            for item in sorted(items):
                 item_path = os.path.join(current_path, item)
-                if os.path.isdir(item_path):
-                    # Check if accessible
-                    if os.access(item_path, os.R_OK):
-                        directories.append({
-                            'name': item,
-                            'path': item_path,
-                            'hidden': item.startswith('.')
-                        })
-        except PermissionError:
-            # If we can't list the directory contents
+                try:
+                    if os.path.isdir(item_path):
+                        # Check if accessible with multiple methods
+                        accessible = False
+                        try:
+                            # First try os.access
+                            if os.access(item_path, os.R_OK):
+                                # Double check by trying to list contents
+                                try:
+                                    os.listdir(item_path)
+                                    accessible = True
+                                except (PermissionError, OSError):
+                                    # Directory exists but can't list contents
+                                    accessible = False
+                        except (OSError, PermissionError):
+                            accessible = False
+                        
+                        if accessible:
+                            directories.append({
+                                'name': item,
+                                'path': item_path.replace('\\', '/'),  # Normalize for web
+                                'hidden': item.startswith('.')
+                            })
+                except (OSError, PermissionError):
+                    # Skip items we can't access
+                    continue
+        except (PermissionError, OSError) as e:
+            logger.warning(f"Cannot list directory contents: {current_path}, error: {str(e)}")
+            # Try to provide at least parent directory if possible
             pass
 
         # Get path components for breadcrumb
@@ -847,8 +1077,20 @@ def download_file():
 
 if __name__ == '__main__':
     # Get configuration from environment variables
-    host = os.environ.get('FLASK_HOST', '0.0.0.0')
+    host = os.environ.get('FLASK_HOST', '127.0.0.1')  # Default to localhost for security
     port = int(os.environ.get('FLASK_PORT', 5000))
     debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-
-    app.run(debug=debug, host=host, port=port)
+    
+    # Log startup information
+    logger.info(f"Starting File Concatenator Web Application")
+    logger.info(f"Host: {host}")
+    logger.info(f"Port: {port}")
+    logger.info(f"Debug: {debug}")
+    logger.info(f"Platform: {platform.system()}")
+    logger.info(f"Python: {sys.version}")
+    
+    try:
+        app.run(debug=debug, host=host, port=port, threaded=True)
+    except Exception as e:
+        logger.error(f"Failed to start application: {str(e)}")
+        sys.exit(1)
