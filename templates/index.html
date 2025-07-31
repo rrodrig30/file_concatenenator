@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Concatenator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 50%, #2c3e50 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #2c3e50;
+        }
+        
+        .main-container {
+            background: rgba(240, 248, 255, 0.98);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+            backdrop-filter: blur(15px);
+            margin: 2rem auto;
+            max-width: 900px;
+            border: 1px solid rgba(135, 206, 235, 0.3);
+        }
+        
+        .header-section {
+            background: linear-gradient(135deg, #87ceeb 0%, #4682b4 50%, #5f9ea0 100%);
+            color: #ffffff;
+            padding: 2rem;
+            border-radius: 20px 20px 0 0;
+            text-align: center;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.3);
+        }
+        
+        .content-section {
+            padding: 2rem;
+            color: #2c3e50;
+        }
+        
+        .form-control:focus {
+            border-color: #4682b4;
+            box-shadow: 0 0 0 0.2rem rgba(70, 130, 180, 0.25);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #4682b4 0%, #5f9ea0 100%);
+            border: none;
+            padding: 10px 30px;
+            border-radius: 25px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            color: #ffffff;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(70, 130, 180, 0.4);
+            background: linear-gradient(135deg, #5f9ea0 0%, #4682b4 100%);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #87ceeb 0%, #b0c4de 100%);
+            border: none;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+        
+        .btn-secondary:hover {
+            background: linear-gradient(135deg, #b0c4de 0%, #87ceeb 100%);
+            color: #2c3e50;
+            transform: translateY(-1px);
+        }
+        
+        .stats-card {
+            background: linear-gradient(135deg, #e6f3ff 0%, #cce7ff 100%);
+            border: 1px solid rgba(70, 130, 180, 0.2);
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            color: #2c3e50;
+        }
+        
+        .error-alert {
+            border-left: 4px solid #dc3545;
+            background: #f8d7da;
+            border-radius: 5px;
+        }
+        
+        .success-alert {
+            border-left: 4px solid #28a745;
+            background: #d4edda;
+            border-radius: 5px;
+        }
+        
+        .loading-spinner {
+            display: none;
+        }
+        
+        .preview-section {
+            background: #f0f8ff;
+            border-radius: 12px;
+            border: 1px solid rgba(70, 130, 180, 0.3);
+            max-height: 300px;
+            overflow-y: auto;
+            color: #2c3e50;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+        
+        .stat-item:last-child {
+            border-bottom: none;
+        }
+        
+        .stat-value {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .directory-list {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid rgba(70, 130, 180, 0.3);
+            border-radius: 8px;
+            padding: 0.5rem;
+            background: #f0f8ff;
+            color: #2c3e50;
+        }
+        
+        .directory-item {
+            padding: 0.5rem;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            color: #2c3e50;
+        }
+        
+        .directory-item:hover {
+            background-color: rgba(135, 206, 235, 0.2);
+        }
+        
+        .directory-item.parent {
+            font-weight: 500;
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 0.5rem;
+        }
+        
+        .directory-item i {
+            margin-right: 0.5rem;
+            width: 20px;
+            text-align: center;
+        }
+        
+        .directory-item.hidden {
+            opacity: 0.6;
+        }
+        
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem;
+            border-bottom: 1px solid rgba(70, 130, 180, 0.1);
+            transition: background-color 0.2s;
+            color: #2c3e50;
+        }
+        
+        .file-item:hover {
+            background-color: rgba(135, 206, 235, 0.15);
+        }
+        
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        
+        .file-checkbox {
+            margin-right: 0.75rem;
+        }
+        
+        .file-info {
+            flex-grow: 1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .file-name {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .file-path {
+            font-size: 0.85em;
+            color: #5f9ea0;
+        }
+        
+        .file-meta {
+            text-align: right;
+            font-size: 0.8em;
+            color: #4682b4;
+        }
+        
+        .file-size {
+            font-weight: 500;
+        }
+        
+        .copyright-text {
+            color: #ffff00 !important;
+            font-weight: bold !important;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            font-size: 1.1em;
+        }
+        
+        .card {
+            border: 1px solid rgba(70, 130, 180, 0.2);
+            border-radius: 12px;
+            background: rgba(240, 248, 255, 0.9);
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #e6f3ff 0%, #cce7ff 100%);
+            border-bottom: 1px solid rgba(70, 130, 180, 0.2);
+            color: #2c3e50;
+            font-weight: 600;
+        }
+        
+        .modal-content {
+            background: rgba(240, 248, 255, 0.98);
+            border: 1px solid rgba(70, 130, 180, 0.3);
+            color: #2c3e50;
+        }
+        
+        .modal-header {
+            background: linear-gradient(135deg, #87ceeb 0%, #b0c4de 100%);
+            color: #2c3e50;
+            border-bottom: 1px solid rgba(70, 130, 180, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="main-container">
+            <!-- Header Section -->
+            <div class="header-section">
+                <h1 class="mb-3"><i class="fas fa-file-alt me-2"></i>File Concatenator</h1>
+                <p class="mb-2">Concatenate Python codebases for Large Language Model (LLM) processing</p>
+                <p class="mb-0 copyright-text">© 2025 UT Health Science Center San Antonio STEM STAIRWAY Coding Team</p>
+            </div>
+            
+            <!-- Main Content -->
+            <div class="content-section">
+                <!-- Directory Input Form -->
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="fas fa-folder me-2"></i>Select Directory</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="directoryForm">
+                                    <div class="row">
+                                        <div class="col-md-8">
+                                            <label for="directoryPath" class="form-label">Directory Path:</label>
+                                            <div class="input-group">
+                                                <input type="text" class="form-control" id="directoryPath" 
+                                                       placeholder="Enter path or use browser"
+                                                       required>
+                                                <button type="button" class="btn btn-outline-secondary" id="browseBtn"
+                                                        data-bs-toggle="modal" data-bs-target="#directoryModal">
+                                                    <i class="fas fa-folder-open"></i> Browse
+                                                </button>
+                                            </div>
+                                            <div class="form-text">
+                                                <i class="fas fa-info-circle me-1"></i>
+                                                Includes: Python, HTML, CSS, JS, Java, logs, templates, README.md, .env files, and all text files
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4 d-flex align-items-end">
+                                            <button type="button" class="btn btn-secondary w-100 me-2" id="listFilesBtn">
+                                                <i class="fas fa-list me-2"></i>List Files
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- File Selection Section -->
+                <div id="fileSelectionSection" style="display: none;">
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0"><i class="fas fa-file-alt me-2"></i>Select Files to Process</h5>
+                                    <div>
+                                        <button type="button" class="btn btn-sm btn-outline-primary me-2" id="selectAllBtn">
+                                            <i class="fas fa-check-square me-1"></i>Select All
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="deselectAllBtn">
+                                            <i class="fas fa-square me-1"></i>Deselect All
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-success" id="processSelectedBtn">
+                                            <i class="fas fa-cogs me-1"></i>Process Selected
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <div class="row text-muted small">
+                                            <div class="col-md-6">
+                                                <span id="fileCount">0 files found</span>
+                                            </div>
+                                            <div class="col-md-6 text-end">
+                                                <span id="totalSize">0 MB total</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="file-list-container" style="max-height: 400px; overflow-y: auto;">
+                                        <div id="fileList">
+                                            <!-- File list will be populated here -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Loading Spinner -->
+                <div class="loading-spinner text-center mb-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Processing...</span>
+                    </div>
+                    <p class="mt-2">Processing files, please wait...</p>
+                </div>
+                
+                <!-- Results Section -->
+                <div id="resultsSection" style="display: none;">
+                    <!-- Statistics -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <div class="card stats-card">
+                                <div class="card-header">
+                                    <h6 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Processing Statistics</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div id="statisticsContent">
+                                        <!-- Statistics will be populated here -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0"><i class="fas fa-download me-2"></i>Download Options</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label for="filename" class="form-label">Filename:</label>
+                                        <input type="text" class="form-control" id="filename" 
+                                               value="concatenated_files.txt">
+                                    </div>
+                                    <button id="downloadBtn" class="btn btn-success w-100">
+                                        <i class="fas fa-download me-2"></i>Download File
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Content Preview -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-eye me-2"></i>Content Preview</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="preview-section p-3">
+                                <pre id="contentPreview" class="mb-0"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Alerts Section -->
+                <div id="alertsSection"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Directory Browser Modal -->
+    <div class="modal fade" id="directoryModal" tabindex="-1" aria-labelledby="directoryModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="directoryModalLabel">
+                        <i class="fas fa-folder-tree me-2"></i>Browse Directories
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Breadcrumb navigation -->
+                    <nav aria-label="breadcrumb" class="mb-3">
+                        <ol class="breadcrumb" id="breadcrumb">
+                            <!-- Breadcrumb items will be populated here -->
+                        </ol>
+                    </nav>
+                    
+                    <!-- Directory listing -->
+                    <div class="directory-list" id="directoryList">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="selectDirectoryBtn">
+                        <i class="fas fa-check me-2"></i>Select Current Directory
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentTempFile = null;
+        let currentBrowsePath = null;
+        let directoryModal = null;
+        let currentFiles = [];
+        let selectedFiles = [];
+        
+        // List files button handler
+        document.getElementById('listFilesBtn').addEventListener('click', async function() {
+            const directoryPath = document.getElementById('directoryPath').value.trim();
+            if (!directoryPath) {
+                showAlert('Please enter a directory path.', 'error');
+                return;
+            }
+            
+            await listFiles(directoryPath);
+        });
+        
+        // List files function
+        async function listFiles(directoryPath) {
+            document.querySelector('.loading-spinner').style.display = 'block';
+            document.getElementById('fileSelectionSection').style.display = 'none';
+            clearAlerts();
+            
+            try {
+                const response = await fetch('/list-files', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        directory_path: directoryPath
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentFiles = data.files;
+                    selectedFiles = data.files.filter(file => file.selected);
+                    displayFileList(data.files, data.stats);
+                    showAlert(`Found ${data.files.length} files (${data.stats.total_size_mb} MB total)`, 'success');
+                } else {
+                    showAlert(data.error, 'error');
+                }
+                
+            } catch (error) {
+                showAlert('Error listing files: ' + error.message, 'error');
+            } finally {
+                document.querySelector('.loading-spinner').style.display = 'none';
+            }
+        }
+        
+        // Display file list
+        function displayFileList(files, stats) {
+            const fileList = document.getElementById('fileList');
+            const fileCount = document.getElementById('fileCount');
+            const totalSize = document.getElementById('totalSize');
+            
+            // Update summary
+            fileCount.textContent = `${files.length} files found`;
+            totalSize.textContent = `${stats.total_size_mb} MB total`;
+            
+            // Build file list HTML
+            let html = '';
+            files.forEach((file, index) => {
+                const fileSize = formatFileSize(file.size);
+                const modifiedDate = new Date(file.modified).toLocaleDateString();
+                
+                html += `
+                    <div class="file-item">
+                        <input type="checkbox" class="form-check-input file-checkbox" 
+                               id="file_${index}" data-file-index="${index}" 
+                               ${file.selected ? 'checked' : ''}>
+                        <div class="file-info">
+                            <div>
+                                <div class="file-name">${escapeHtml(file.name)}</div>
+                                <div class="file-path">${escapeHtml(file.relative_path)}</div>
+                            </div>
+                            <div class="file-meta">
+                                <div class="file-size">${fileSize}</div>
+                                <div>${modifiedDate}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            fileList.innerHTML = html;
+            
+            // Add event listeners for checkboxes
+            fileList.querySelectorAll('.file-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', updateSelectedFiles);
+            });
+            
+            // Show file selection section
+            document.getElementById('fileSelectionSection').style.display = 'block';
+            updateSelectedCount();
+        }
+        
+        // Update selected files array
+        function updateSelectedFiles() {
+            selectedFiles = [];
+            document.querySelectorAll('.file-checkbox:checked').forEach(checkbox => {
+                const index = parseInt(checkbox.dataset.fileIndex);
+                selectedFiles.push(currentFiles[index]);
+            });
+            updateSelectedCount();
+        }
+        
+        // Update selected count display
+        function updateSelectedCount() {
+            const selectedCount = selectedFiles.length;
+            const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
+            const selectedSizeMB = (totalSize / (1024 * 1024)).toFixed(2);
+            
+            document.getElementById('processSelectedBtn').textContent = 
+                `Process Selected (${selectedCount} files, ${selectedSizeMB} MB)`;
+            document.getElementById('processSelectedBtn').disabled = selectedCount === 0;
+        }
+        
+        // Select all button handler
+        document.getElementById('selectAllBtn').addEventListener('click', function() {
+            document.querySelectorAll('.file-checkbox').forEach(checkbox => {
+                checkbox.checked = true;
+            });
+            updateSelectedFiles();
+        });
+        
+        // Deselect all button handler
+        document.getElementById('deselectAllBtn').addEventListener('click', function() {
+            document.querySelectorAll('.file-checkbox').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            updateSelectedFiles();
+        });
+        
+        // Process selected files button handler
+        document.getElementById('processSelectedBtn').addEventListener('click', async function() {
+            if (selectedFiles.length === 0) {
+                showAlert('Please select at least one file to process.', 'error');
+                return;
+            }
+            
+            const directoryPath = document.getElementById('directoryPath').value.trim();
+            await processSelectedFiles(directoryPath, selectedFiles);
+        });
+        
+        // Process selected files function
+        async function processSelectedFiles(directoryPath, files) {
+            document.querySelector('.loading-spinner').style.display = 'block';
+            document.getElementById('resultsSection').style.display = 'none';
+            clearAlerts();
+            
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        directory_path: directoryPath,
+                        selected_files: files,
+                        use_parallel: true
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentTempFile = data.temp_file;
+                    displayResults(data.stats, data.content_preview);
+                    showAlert(`Successfully processed ${files.length} files using ${data.stats.processing_method} processing!`, 'success');
+                } else {
+                    showAlert(data.error, 'error');
+                }
+                
+            } catch (error) {
+                showAlert('Error processing files: ' + error.message, 'error');
+            } finally {
+                document.querySelector('.loading-spinner').style.display = 'none';
+            }
+        }
+        
+        // Format file size helper
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        // Download button handler
+        document.getElementById('downloadBtn').addEventListener('click', async function() {
+            if (!currentTempFile) {
+                showAlert('No processed file available for download.', 'error');
+                return;
+            }
+            
+            const filename = document.getElementById('filename').value.trim() || 'concatenated_files.txt';
+            
+            try {
+                const response = await fetch('/download', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        temp_file: currentTempFile,
+                        filename: filename
+                    })
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    showAlert('File downloaded successfully!', 'success');
+                } else {
+                    const errorData = await response.json();
+                    showAlert(errorData.error, 'error');
+                }
+                
+            } catch (error) {
+                showAlert('Error downloading file: ' + error.message, 'error');
+            }
+        });
+        
+        function displayResults(stats, contentPreview) {
+            // Calculate processed size in MB
+            const processedSizeMB = (stats.processed_size / (1024 * 1024)).toFixed(2);
+            
+            // Display statistics
+            const statsHtml = `
+                <div class="stat-item">
+                    <span><i class="fas fa-folder me-2"></i>Selected Files:</span>
+                    <span class="stat-value">${stats.selected_files || stats.total_files}</span>
+                </div>
+                <div class="stat-item">
+                    <span><i class="fas fa-check-circle me-2 text-success"></i>Files Processed:</span>
+                    <span class="stat-value text-success">${stats.concatenated_files}</span>
+                </div>
+                <div class="stat-item">
+                    <span><i class="fas fa-times-circle me-2 text-warning"></i>Files Skipped:</span>
+                    <span class="stat-value text-warning">${stats.skipped_files}</span>
+                </div>
+                <div class="stat-item">
+                    <span><i class="fas fa-database me-2 text-info"></i>Data Processed:</span>
+                    <span class="stat-value text-info">${processedSizeMB} MB</span>
+                </div>
+                <div class="stat-item">
+                    <span><i class="fas fa-cogs me-2 text-primary"></i>Processing Method:</span>
+                    <span class="stat-value text-primary">${stats.processing_method || 'sequential'}</span>
+                </div>
+                <div class="stat-item">
+                    <span><i class="fas fa-users me-2 text-info"></i>Worker Threads:</span>
+                    <span class="stat-value text-info">${stats.worker_threads || 1}</span>
+                </div>
+                <div class="stat-item">
+                    <span><i class="fas fa-exclamation-triangle me-2 text-danger"></i>Errors:</span>
+                    <span class="stat-value text-danger">${stats.errors.length}</span>
+                </div>
+            `;
+            
+            document.getElementById('statisticsContent').innerHTML = statsHtml;
+            
+            // Display content preview
+            document.getElementById('contentPreview').textContent = contentPreview;
+            
+            // Show errors if any
+            if (stats.errors.length > 0) {
+                const errorsHtml = stats.errors.map(error => 
+                    `<div class="alert alert-warning mb-2 small"><i class="fas fa-exclamation-triangle me-2"></i>${error}</div>`
+                ).join('');
+                document.getElementById('alertsSection').innerHTML += errorsHtml;
+            }
+            
+            // Show results section
+            document.getElementById('resultsSection').style.display = 'block';
+        }
+        
+        function showAlert(message, type) {
+            const alertClass = type === 'error' ? 'alert-danger' : 'alert-success';
+            const icon = type === 'error' ? 'fas fa-exclamation-circle' : 'fas fa-check-circle';
+            
+            const alertHtml = `
+                <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                    <i class="${icon} me-2"></i>${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            
+            document.getElementById('alertsSection').innerHTML = alertHtml;
+        }
+        
+        function clearAlerts() {
+            document.getElementById('alertsSection').innerHTML = '';
+        }
+        
+        // Auto-suggest common directory paths
+        document.getElementById('directoryPath').addEventListener('focus', function() {
+            if (!this.value) {
+                // You could add platform-specific default paths here
+                this.placeholder = 'Enter full path to directory (e.g., /home/user/project, C:\\Users\\Username\\Documents)';
+            }
+        });
+        
+        // Initialize modal
+        document.addEventListener('DOMContentLoaded', function() {
+            directoryModal = new bootstrap.Modal(document.getElementById('directoryModal'));
+            
+            // When modal is shown, load initial directory
+            document.getElementById('directoryModal').addEventListener('shown.bs.modal', function() {
+                const currentPath = document.getElementById('directoryPath').value;
+                browseDirectory(currentPath || null);
+            });
+        });
+        
+        // Browse directory function
+        async function browseDirectory(path) {
+            const directoryList = document.getElementById('directoryList');
+            const breadcrumb = document.getElementById('breadcrumb');
+            
+            // Show loading spinner
+            directoryList.innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            `;
+            
+            try {
+                const response = await fetch('/browse', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ path: path })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentBrowsePath = data.current_path;
+                    
+                    // Update breadcrumb
+                    breadcrumb.innerHTML = '';
+                    data.path_components.forEach((component, index) => {
+                        const li = document.createElement('li');
+                        li.className = 'breadcrumb-item';
+                        
+                        if (index === data.path_components.length - 1) {
+                            li.classList.add('active');
+                            li.setAttribute('aria-current', 'page');
+                            li.textContent = component.name;
+                        } else {
+                            const link = document.createElement('a');
+                            link.href = '#';
+                            link.textContent = component.name;
+                            link.onclick = (e) => {
+                                e.preventDefault();
+                                browseDirectory(component.path);
+                            };
+                            li.appendChild(link);
+                        }
+                        
+                        breadcrumb.appendChild(li);
+                    });
+                    
+                    // Build directory list
+                    let html = '';
+                    
+                    // Add parent directory if available
+                    if (data.parent_path) {
+                        html += `
+                            <div class="directory-item parent" onclick="browseDirectory('${escapeHtml(data.parent_path)}')">
+                                <i class="fas fa-level-up-alt"></i>
+                                <span>..</span>
+                            </div>
+                        `;
+                    }
+                    
+                    // Add directories
+                    if (data.directories.length === 0) {
+                        html += '<div class="text-muted text-center p-3">No subdirectories found</div>';
+                    } else {
+                        data.directories.forEach(dir => {
+                            const classes = dir.hidden ? 'directory-item hidden' : 'directory-item';
+                            html += `
+                                <div class="${classes}" onclick="browseDirectory('${escapeHtml(dir.path)}')">
+                                    <i class="fas fa-folder${dir.hidden ? '' : '-open'}"></i>
+                                    <span>${escapeHtml(dir.name)}</span>
+                                </div>
+                            `;
+                        });
+                    }
+                    
+                    directoryList.innerHTML = html;
+                    
+                } else {
+                    showAlert(data.error, 'error');
+                    directoryList.innerHTML = '<div class="text-danger text-center p-3">Error loading directory</div>';
+                }
+                
+            } catch (error) {
+                showAlert('Error browsing directory: ' + error.message, 'error');
+                directoryList.innerHTML = '<div class="text-danger text-center p-3">Error loading directory</div>';
+            }
+        }
+        
+        // Select directory button handler
+        document.getElementById('selectDirectoryBtn').addEventListener('click', function() {
+            if (currentBrowsePath) {
+                document.getElementById('directoryPath').value = currentBrowsePath;
+                directoryModal.hide();
+            }
+        });
+        
+        // Utility function to escape HTML
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+    </script>
+</body>
+</html>
